@@ -1,0 +1,41 @@
+CREATE TABLE recommendation AS\
+WITH avg_rate AS (\
+	SELECT ratings.movieid, AVG(rating)\
+	FROM ratings\
+	GROUP BY ratings.movieid\
+	ORDER BY ratings.movieid\
+	),\
+sim_table AS (\
+	SELECT one.movieid AS movieid1, two.movieid AS movieid2, 1-(ABS(one.avg - two.avg)/5) AS sim\
+	FROM avg_rate one, avg_rate two\
+	WHERE one.movieid != two.movieid\
+	),\
+user_rate_list AS (\
+	SELECT ratings.movieid AS ratelist, ratings.timestamp AS timestamp\
+	FROM ratings\
+	WHERE ratings.userid = :v1\
+	),\
+almost_final AS (\
+	SELECT sim_table.movieid1, sim_table.movieid2, sim_table.sim, ratings.rating\
+	FROM sim_table\
+	LEFT JOIN ratings ON sim_table.movieid1 = ratings.movieid AND ratings.userid = :v1\
+	WHERE sim_table.movieid1 IN (SELECT ratelist FROM user_rate_list)\
+		AND \
+		sim_table.movieid2 IN (SELECT movies.movieid\
+							   FROM movies\
+							   LEFT JOIN user_rate_list ON movies.movieid = user_rate_list.ratelist\
+							   WHERE user_rate_list.timestamp IS NULL\
+							  ) 	\
+	ORDER BY sim_table.movieid2\
+	),\
+real_final AS (\
+	SELECT almost_final.movieid2, SUM(almost_final.sim * almost_final.rating)/SUM(almost_final.sim) AS predict_rate\
+	FROM almost_final\
+	GROUP BY almost_final.movieid2\
+	ORDER BY almost_final.movieid2\
+	)\
+\
+SELECT movies.title AS title\
+FROM real_final\
+LEFT JOIN movies ON real_final.movieid2 = movies.movieid\
+WHERE real_final.predict_rate > 3.9;}
